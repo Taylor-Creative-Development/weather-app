@@ -7,6 +7,17 @@
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
+    <script type="module">
+      if (location.hostname.endsWith('github.io')) {
+        const base = '/weather-app/'
+        const styles = document.createElement('link')
+        styles.rel = 'stylesheet'
+        styles.href = `${base}assets/index.css`
+        document.head.appendChild(styles)
+        import(`${base}assets/app.js`)
+      } else {
+        import('/src/main.jsx')
+      }
+    </script>
   </body>
 </html>
