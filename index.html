@@ -14,7 +14,7 @@
         styles.rel = 'stylesheet'
         styles.href = `${base}assets/index.css`
         document.head.appendChild(styles)
-        import(`${base}assets/app.js`)
+        import(/* @vite-ignore */ `${base}assets/app.js`)
       } else {
         import('/src/main.jsx')
       }
