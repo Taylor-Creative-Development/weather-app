@@ -29,6 +29,12 @@ import { CircleMarker, MapContainer, Popup, TileLayer, useMap } from 'react-leaf
 import { getAlerts, getRadarTimeline, getWeather, searchLocations } from './weatherApi.js'
 
 const savedLocationKey = 'weather-app:last-location'
+const radarBaseMap = {
+  attribution:
+    '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+  url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+}
+const radarLayerOpacity = 0.86
 const fallbackLocation = {
   name: 'Chicago',
   admin1: 'Illinois',
@@ -393,15 +399,15 @@ function RadarPanel({ location }) {
         <MapContainer center={[location.latitude, location.longitude]} zoom={7} scrollWheelZoom className="leaflet-map">
           <RecenterMap location={location} />
           <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            attribution={radarBaseMap.attribution}
+            url={radarBaseMap.url}
           />
           {currentFrame && (
             <TileLayer
               key={currentFrame.path}
               attribution='Weather radar by <a href="https://www.rainviewer.com/">RainViewer</a>'
               className="radar-tile"
-              opacity={0.72}
+              opacity={radarLayerOpacity}
               url={currentFrame.tileUrl}
             />
           )}
@@ -433,7 +439,7 @@ function RadarPanel({ location }) {
         />
         <span>{currentFrame ? formatRadarTime(currentFrame.time) : 'Loading radar...'}</span>
       </div>
-      <p className="subtle">Animated radar uses RainViewer past and nowcast frames. Map tiles by OpenStreetMap.</p>
+      <p className="subtle">Animated radar uses RainViewer past and nowcast frames. Dark map tiles use OpenStreetMap data.</p>
     </section>
   )
 }

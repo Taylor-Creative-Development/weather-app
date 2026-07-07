@@ -2,6 +2,9 @@ const OPEN_METEO_FORECAST = 'https://api.open-meteo.com/v1/forecast'
 const OPEN_METEO_GEOCODE = 'https://geocoding-api.open-meteo.com/v1/search'
 const NWS_ALERTS = 'https://api.weather.gov/alerts/active'
 const RAINVIEWER = 'https://api.rainviewer.com/public/weather-maps.json'
+const RAINVIEWER_TILE_SIZE = 256
+const RAINVIEWER_COLOR_SCHEME = 2
+const RAINVIEWER_TILE_OPTIONS = '1_1'
 
 const weatherCodes = {
   0: ['Clear', 'sun'],
@@ -153,9 +156,11 @@ export async function getAlerts(location) {
 export async function getRadarTimeline() {
   const data = await fetchJson(RAINVIEWER)
   const frames = [...(data.radar?.past ?? []), ...(data.radar?.nowcast ?? [])]
+  const host = data.host ?? 'https://tilecache.rainviewer.com'
+
   return frames.map((frame) => ({
     ...frame,
-    tileUrl: `https://tilecache.rainviewer.com${frame.path}/256/{z}/{x}/{y}/2/1_1.png`,
+    tileUrl: `${host}${frame.path}/${RAINVIEWER_TILE_SIZE}/{z}/{x}/{y}/${RAINVIEWER_COLOR_SCHEME}/${RAINVIEWER_TILE_OPTIONS}.png`,
   }))
 }
 

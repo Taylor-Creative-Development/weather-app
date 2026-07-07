@@ -604,10 +604,6 @@ h2 {
   color: #fffaf0;
 }
 
-.radar-tile {
-  mix-blend-mode: screen;
-}
-
 .radar-controls {
   gap: 12px;
   margin-top: 14px;
