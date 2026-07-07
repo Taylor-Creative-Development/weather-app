@@ -12,6 +12,8 @@ import {
   LocateFixed,
   MapPin,
   Navigation,
+  Pause,
+  Play,
   Radar,
   RefreshCw,
   Search,
@@ -23,7 +25,8 @@ import {
   Umbrella,
   Wind,
 } from 'lucide-react'
-import { getAlerts, getRadarFrame, getWeather, searchLocations } from './weatherApi.js'
+import { CircleMarker, MapContainer, Popup, TileLayer, useMap } from 'react-leaflet'
+import { getAlerts, getRadarTimeline, getWeather, searchLocations } from './weatherApi.js'
 
 const savedLocationKey = 'weather-app:last-location'
 const fallbackLocation = {
@@ -338,7 +341,9 @@ function DayDetails({ day }) {
 }
 
 function RadarPanel({ location }) {
-  const [frame, setFrame] = useState(null)
+  const [frames, setFrames] = useState([])
+  const [frameIndex, setFrameIndex] = useState(0)
+  const [playing, setPlaying] = useState(true)
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -347,8 +352,11 @@ function RadarPanel({ location }) {
     async function loadRadar() {
       setError('')
       try {
-        const nextFrame = await getRadarFrame()
-        if (!cancelled) setFrame(nextFrame)
+        const timeline = await getRadarTimeline()
+        if (!cancelled) {
+          setFrames(timeline)
+          setFrameIndex(Math.max(0, timeline.length - 1))
+        }
       } catch {
         if (!cancelled) setError('Radar is temporarily unavailable.')
       }
@@ -360,7 +368,16 @@ function RadarPanel({ location }) {
     }
   }, [])
 
-  const tiles = useMemo(() => makeTiles(location, frame), [location, frame])
+  useEffect(() => {
+    if (!playing || frames.length < 2) return
+    const id = window.setInterval(() => {
+      setFrameIndex((index) => (index + 1) % frames.length)
+    }, 850)
+
+    return () => window.clearInterval(id)
+  }, [frames.length, playing])
+
+  const currentFrame = frames[frameIndex]
 
   return (
     <section className="radar-panel">
@@ -373,17 +390,62 @@ function RadarPanel({ location }) {
       </div>
       {error && <div className="notice error"><AlertTriangle size={18} />{error}</div>}
       <div className="map" aria-label="Radar map">
-        {tiles.map((tile) => (
-          <div className="tile" key={`${tile.x}-${tile.y}`} style={{ left: tile.left, top: tile.top }}>
-            <img src={tile.baseUrl} alt="" />
-            {tile.radarUrl && <img className="radar-tile" src={tile.radarUrl} alt="" />}
-          </div>
-        ))}
-        <div className="pin" aria-label="Selected location"><MapPin size={16} /></div>
+        <MapContainer center={[location.latitude, location.longitude]} zoom={7} scrollWheelZoom className="leaflet-map">
+          <RecenterMap location={location} />
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          />
+          {currentFrame && (
+            <TileLayer
+              key={currentFrame.path}
+              attribution='Weather radar by <a href="https://www.rainviewer.com/">RainViewer</a>'
+              className="radar-tile"
+              opacity={0.72}
+              url={currentFrame.tileUrl}
+            />
+          )}
+          <CircleMarker
+            center={[location.latitude, location.longitude]}
+            radius={8}
+            pathOptions={{ color: '#ffffff', fillColor: '#22d3ee', fillOpacity: 1, weight: 3 }}
+          >
+            <Popup>{formatLocation(location)}</Popup>
+          </CircleMarker>
+        </MapContainer>
       </div>
-      <p className="subtle">Map tiles by OpenStreetMap. Weather radar by RainViewer.</p>
+      <div className="radar-controls">
+        <button type="button" onClick={() => setPlaying((value) => !value)} disabled={frames.length < 2}>
+          {playing ? <Pause size={16} /> : <Play size={16} />}
+          {playing ? 'Pause' : 'Play'}
+        </button>
+        <input
+          type="range"
+          min="0"
+          max={Math.max(0, frames.length - 1)}
+          value={frameIndex}
+          onChange={(event) => {
+            setPlaying(false)
+            setFrameIndex(Number(event.target.value))
+          }}
+          disabled={frames.length === 0}
+          aria-label="Radar frame"
+        />
+        <span>{currentFrame ? formatRadarTime(currentFrame.time) : 'Loading radar...'}</span>
+      </div>
+      <p className="subtle">Animated radar uses RainViewer past and nowcast frames. Map tiles by OpenStreetMap.</p>
     </section>
   )
+}
+
+function RecenterMap({ location }) {
+  const map = useMap()
+
+  useEffect(() => {
+    map.setView([location.latitude, location.longitude], map.getZoom(), { animate: true })
+  }, [location, map])
+
+  return null
 }
 
 function MetricGrid({ metrics }) {
@@ -420,38 +482,6 @@ function WeatherIcon({ icon, size }) {
   }[icon] ?? Cloud
 
   return <Icon size={size} strokeWidth={2.2} aria-hidden="true" />
-}
-
-function makeTiles(location, frame) {
-  const zoom = 6
-  const center = latLngToTile(location.latitude, location.longitude, zoom)
-  const tiles = []
-  const size = 256
-
-  for (let yOffset = -1; yOffset <= 1; yOffset += 1) {
-    for (let xOffset = -1; xOffset <= 1; xOffset += 1) {
-      const x = center.x + xOffset
-      const y = center.y + yOffset
-      tiles.push({
-        x,
-        y,
-        left: `calc(50% + ${xOffset * size - size / 2}px)`,
-        top: `calc(50% + ${yOffset * size - size / 2}px)`,
-        baseUrl: `https://tile.openstreetmap.org/${zoom}/${x}/${y}.png`,
-        radarUrl: frame ? `https://tilecache.rainviewer.com${frame.path}/256/${zoom}/${x}/${y}/2/1_1.png` : '',
-      })
-    }
-  }
-
-  return tiles
-}
-
-function latLngToTile(lat, lon, zoom) {
-  const scale = 2 ** zoom
-  const x = Math.floor(((lon + 180) / 360) * scale)
-  const radians = (lat * Math.PI) / 180
-  const y = Math.floor(((1 - Math.log(Math.tan(radians) + 1 / Math.cos(radians)) / Math.PI) / 2) * scale)
-  return { x, y }
 }
 
 function locateUser(setLocation, setStatus) {
@@ -515,6 +545,14 @@ function formatLocation(location) {
 function formatTime(value) {
   if (!value) return 'N/A'
   return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(new Date(value))
+}
+
+function formatRadarTime(value) {
+  if (!value) return 'Radar frame'
+  return new Intl.DateTimeFormat(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(value * 1000))
 }
 
 function round(value) {

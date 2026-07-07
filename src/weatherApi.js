@@ -150,10 +150,13 @@ export async function getAlerts(location) {
   }
 }
 
-export async function getRadarFrame() {
+export async function getRadarTimeline() {
   const data = await fetchJson(RAINVIEWER)
   const frames = [...(data.radar?.past ?? []), ...(data.radar?.nowcast ?? [])]
-  return frames.at(-1) ?? null
+  return frames.map((frame) => ({
+    ...frame,
+    tileUrl: `https://tilecache.rainviewer.com${frame.path}/256/{z}/{x}/{y}/2/1_1.png`,
+  }))
 }
 
 function normalizeWeather(data) {
