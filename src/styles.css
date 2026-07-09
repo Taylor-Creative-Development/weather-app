@@ -664,6 +664,10 @@ h2 {
   transition: opacity 420ms ease;
 }
 
+.leaflet-pane .leaflet-layer {
+  transition: opacity 650ms ease;
+}
+
 .radar-controls {
   gap: 12px;
   margin-top: 14px;

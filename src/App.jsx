@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   CalendarDays,
@@ -37,10 +37,10 @@ const radarBaseMap = {
 }
 const mapMaxZoom = 18
 const radarPreloadFrameCount = 2
-const radarFrameInterval = 1100
+const radarFrameInterval = 1400
 const radarLayerOpacity = 0.82
 const radarMaxNativeZoom = 7
-const radarTransitionMs = 420
+const radarTransitionMs = 650
 const radarLabelOpacity = 0.68
 const fallbackLocation = {
   name: 'Chicago',
@@ -360,7 +360,8 @@ function RadarPanel({ location }) {
   const [error, setError] = useState('')
   const [visibleFrame, setVisibleFrame] = useState(null)
   const [previousFrame, setPreviousFrame] = useState(null)
-  const [transitioning, setTransitioning] = useState(false)
+  const [frameFadeIn, setFrameFadeIn] = useState(true)
+  const fadeRequestRef = useRef(null)
 
   useEffect(() => {
     let cancelled = false
@@ -400,20 +401,28 @@ function RadarPanel({ location }) {
     setVisibleFrame((frame) => {
       if (!frame || frame.path === currentFrame.path) return currentFrame
       setPreviousFrame(frame)
-      setTransitioning(true)
+      setFrameFadeIn(false)
+      fadeRequestRef.current = window.requestAnimationFrame(() => {
+        fadeRequestRef.current = window.requestAnimationFrame(() => {
+          setFrameFadeIn(true)
+        })
+      })
       return currentFrame
     })
+
+    return () => {
+      if (fadeRequestRef.current) window.cancelAnimationFrame(fadeRequestRef.current)
+    }
   }, [currentFrame])
 
   useEffect(() => {
-    if (!transitioning) return
+    if (!previousFrame || !frameFadeIn) return
     const id = window.setTimeout(() => {
       setPreviousFrame(null)
-      setTransitioning(false)
     }, radarTransitionMs)
 
     return () => window.clearTimeout(id)
-  }, [transitioning])
+  }, [frameFadeIn, previousFrame])
 
   return (
     <section className="radar-panel">
@@ -426,10 +435,10 @@ function RadarPanel({ location }) {
       </div>
       {error && <div className="notice error"><AlertTriangle size={18} />{error}</div>}
       <div className="map" aria-label="Radar map">
-          <MapContainer center={[location.latitude, location.longitude]} maxZoom={mapMaxZoom} zoom={8} scrollWheelZoom className="leaflet-map">
-            <RecenterMap location={location} />
-            <RadarFramePreloader frames={frames} frameIndex={frameIndex} />
-            <TileLayer
+        <MapContainer center={[location.latitude, location.longitude]} maxZoom={mapMaxZoom} zoom={8} scrollWheelZoom className="leaflet-map">
+          <RecenterMap location={location} />
+          <RadarFramePreloader frames={frames} frameIndex={frameIndex} />
+          <TileLayer
             attribution={radarBaseMap.attribution}
             className="radar-base-tile"
             maxZoom={mapMaxZoom}
@@ -443,7 +452,7 @@ function RadarPanel({ location }) {
                 className="radar-tile radar-tile-previous"
                 maxNativeZoom={radarMaxNativeZoom}
                 maxZoom={mapMaxZoom}
-                opacity={transitioning ? 0 : radarLayerOpacity}
+                opacity={frameFadeIn ? 0 : radarLayerOpacity}
                 updateWhenIdle
                 url={previousFrame.tileUrl}
                 zIndex={1}
@@ -456,7 +465,7 @@ function RadarPanel({ location }) {
                 className="radar-tile radar-tile-current"
                 maxNativeZoom={radarMaxNativeZoom}
                 maxZoom={mapMaxZoom}
-                opacity={radarLayerOpacity}
+                opacity={!previousFrame || frameFadeIn ? radarLayerOpacity : 0}
                 updateWhenIdle
                 url={visibleFrame.tileUrl}
                 zIndex={2}
