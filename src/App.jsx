@@ -25,7 +25,7 @@ import {
   Umbrella,
   Wind,
 } from 'lucide-react'
-import { CircleMarker, MapContainer, Pane, Popup, TileLayer, useMap } from 'react-leaflet'
+import { CircleMarker, MapContainer, Pane, Popup as LeafletPopup, TileLayer, useMap } from 'react-leaflet'
 import { getAlerts, getRadarTimeline, getWeather, searchLocations } from './weatherApi.js'
 
 const savedLocationKey = 'weather-app:last-location'
@@ -89,6 +89,8 @@ const radarBaseMap = {
   url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png',
 }
 const mapMaxZoom = 8
+const mapTilerKey = import.meta.env.VITE_MAPTILER_KEY?.trim()
+const mapTilerAnimationSpeed = 3600
 const radarPreloadFrameCount = 2
 const radarFrameInterval = 1400
 const radarLayerOpacity = 0.82
@@ -186,6 +188,7 @@ export default function App() {
   const titleScale = getTitleScale(placeName)
   const accent = weatherAccent(weather?.current?.icon)
   const activeAlerts = alerts.alerts.length
+  const radarProvider = mapTilerKey ? 'MapTiler Weather' : 'RainViewer'
 
   return (
     <div className="app-shell" style={{ '--accent': accent }}>
@@ -309,7 +312,7 @@ export default function App() {
 
           <footer className="page-footer">
             <span>{activeAlerts > 0 ? `${activeAlerts} active alert${activeAlerts === 1 ? '' : 's'}` : 'No active alerts'}</span>
-            <span>Weather by Open-Meteo and NWS. Radar by RainViewer.</span>
+            <span>Weather by Open-Meteo and NWS. Radar by {radarProvider}.</span>
           </footer>
         </main>
       ) : (
@@ -407,7 +410,189 @@ function DayDetails({ day }) {
 }
 
 function RadarPanel({ location }) {
-  return <RainViewerRadarPanel location={location} />
+  if (!mapTilerKey) return <RainViewerRadarPanel location={location} />
+  return <MapTilerRadarPanel location={location} />
+}
+
+function MapTilerRadarPanel({ location }) {
+  const mapContainerRef = useRef(null)
+  const mapRef = useRef(null)
+  const markerRef = useRef(null)
+  const radarLayerRef = useRef(null)
+  const [timeRange, setTimeRange] = useState(null)
+  const [radarTime, setRadarTime] = useState(null)
+  const [playing, setPlaying] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!mapContainerRef.current) return undefined
+
+    let cancelled = false
+    let map = null
+    let marker = null
+    let radarLayer = null
+    let removeListeners = () => {}
+
+    setError('')
+    setTimeRange(null)
+    setRadarTime(null)
+    setPlaying(true)
+
+    async function initializeMap() {
+      try {
+        const [{ config, Map, MapStyle, Marker, Popup }, { RadarLayer }] = await Promise.all([
+          import('@maptiler/sdk'),
+          import('@maptiler/weather'),
+          import('@maptiler/sdk/style.css'),
+        ])
+
+        if (cancelled || !mapContainerRef.current) return
+
+        config.apiKey = mapTilerKey
+
+        map = new Map({
+          container: mapContainerRef.current,
+          style: MapStyle.DATAVIZ.DARK,
+          center: [location.longitude, location.latitude],
+          zoom: 9,
+          minZoom: 3,
+          maxZoom: 13,
+          geolocateControl: false,
+          navigationControl: 'top-right',
+          scaleControl: true,
+          attributionControl: {
+            compact: 'auto',
+            customAttribution: 'Weather radar by MapTiler',
+          },
+        })
+
+        radarLayer = new RadarLayer({
+          id: 'weather-radar',
+          opacity: 0.76,
+          smooth: true,
+        })
+
+        mapRef.current = map
+        radarLayerRef.current = radarLayer
+
+        const updateTimeline = () => {
+          const start = radarLayer.getAnimationStart()
+          const end = radarLayer.getAnimationEnd()
+          const current = radarLayer.getAnimationTime()
+          if (!Number.isFinite(start) || !Number.isFinite(end)) return
+          setTimeRange({ start, end })
+          setRadarTime(Number.isFinite(current) ? current : end)
+        }
+
+        const handleSourceReady = () => {
+          updateTimeline()
+          radarLayer.animateByFactor(mapTilerAnimationSpeed)
+        }
+
+        const handleTick = (event) => {
+          setRadarTime(event.time)
+        }
+
+        const handleMapError = () => {
+          setError('MapTiler radar is temporarily unavailable.')
+        }
+
+        radarLayer.on('sourceReady', handleSourceReady)
+        radarLayer.on('tick', handleTick)
+        map.on('error', handleMapError)
+
+        map.on('load', () => {
+          try {
+            const firstSymbolLayer = map.getStyle().layers?.find((layer) => layer.type === 'symbol')?.id
+            map.addLayer(radarLayer, firstSymbolLayer)
+            marker = new Marker({ color: '#22d3ee' })
+              .setLngLat([location.longitude, location.latitude])
+              .setPopup(new Popup().setText(formatLocation(location)))
+              .addTo(map)
+            markerRef.current = marker
+          } catch {
+            setError('MapTiler radar is temporarily unavailable.')
+          }
+        })
+
+        removeListeners = () => {
+          radarLayer.animateByFactor(0)
+          radarLayer.off('sourceReady', handleSourceReady)
+          radarLayer.off('tick', handleTick)
+          map.off('error', handleMapError)
+        }
+      } catch {
+        if (!cancelled) setError('MapTiler radar is temporarily unavailable.')
+      }
+    }
+
+    initializeMap()
+
+    return () => {
+      cancelled = true
+      removeListeners()
+      marker?.remove()
+      map?.remove()
+      mapRef.current = null
+      markerRef.current = null
+      radarLayerRef.current = null
+    }
+  }, [location])
+
+  function togglePlayback() {
+    const radarLayer = radarLayerRef.current
+    if (!radarLayer) return
+
+    setPlaying((value) => {
+      const next = !value
+      radarLayer.animateByFactor(next ? mapTilerAnimationSpeed : 0)
+      return next
+    })
+  }
+
+  function scrubTimeline(value) {
+    const time = Number(value)
+    const radarLayer = radarLayerRef.current
+    if (!radarLayer) return
+    radarLayer.animateByFactor(0)
+    radarLayer.setAnimationTime(time)
+    setPlaying(false)
+    setRadarTime(time)
+  }
+
+  return (
+    <section className="radar-panel">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Radar</p>
+          <h2>Live precipitation map</h2>
+        </div>
+        <a href="https://www.maptiler.com/weather/" target="_blank" rel="noreferrer">MapTiler</a>
+      </div>
+      {error && <div className="notice error"><AlertTriangle size={18} />{error}</div>}
+      <div className="map" aria-label="Radar map">
+        <div ref={mapContainerRef} className="maptiler-map" />
+      </div>
+      <div className="radar-controls">
+        <button type="button" onClick={togglePlayback} disabled={!timeRange}>
+          {playing ? <Pause size={16} /> : <Play size={16} />}
+          {playing ? 'Pause' : 'Play'}
+        </button>
+        <input
+          type="range"
+          min={timeRange?.start ?? 0}
+          max={timeRange?.end ?? 0}
+          step="900"
+          value={radarTime ?? timeRange?.end ?? 0}
+          onChange={(event) => scrubTimeline(event.target.value)}
+          disabled={!timeRange}
+          aria-label="Radar time"
+        />
+        <span>{radarTime ? formatMapTilerTime(radarTime) : 'Loading radar...'}</span>
+      </div>
+      <p className="subtle">Animated radar uses MapTiler Weather data and MapTiler Cloud basemaps.</p>
+    </section>
+  )
 }
 
 function RainViewerRadarPanel({ location }) {
@@ -543,7 +728,7 @@ function RainViewerRadarPanel({ location }) {
             radius={8}
             pathOptions={{ color: '#ffffff', fillColor: '#22d3ee', fillOpacity: 1, weight: 3 }}
           >
-            <Popup>{formatLocation(location)}</Popup>
+            <LeafletPopup>{formatLocation(location)}</LeafletPopup>
           </CircleMarker>
         </MapContainer>
       </div>
@@ -737,6 +922,15 @@ function formatTime(value) {
 function formatRadarTime(value) {
   if (!value) return 'Radar frame'
   return new Intl.DateTimeFormat(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(value * 1000))
+}
+
+function formatMapTilerTime(value) {
+  if (!value) return 'Radar time'
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: 'short',
     hour: 'numeric',
     minute: '2-digit',
   }).format(new Date(value * 1000))

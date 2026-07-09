@@ -625,6 +625,50 @@ h2 {
   background: #1c1b19;
 }
 
+.maptiler-map {
+  width: 100%;
+  height: 100%;
+  background: #1c1b19;
+}
+
+.maplibregl-map {
+  font: inherit;
+}
+
+.maplibregl-ctrl-group {
+  border: 1px solid rgba(255, 250, 240, 0.14) !important;
+  background: rgba(28, 25, 23, 0.88) !important;
+}
+
+.maplibregl-ctrl-group button {
+  background-color: rgba(28, 25, 23, 0.88) !important;
+}
+
+.maplibregl-ctrl-group button span {
+  filter: invert(1);
+}
+
+.maplibregl-ctrl-attrib {
+  border-radius: 8px 0 0 0;
+  background: rgba(28, 25, 23, 0.78) !important;
+  color: #d3c8b7 !important;
+}
+
+.maplibregl-ctrl-attrib a,
+.maplibregl-popup-content a {
+  color: #5eead4 !important;
+}
+
+.maplibregl-popup-content {
+  background: #231f1a;
+  color: #fffaf0;
+}
+
+.maplibregl-popup-tip {
+  border-top-color: #231f1a;
+  border-bottom-color: #231f1a;
+}
+
 .leaflet-container {
   font: inherit;
 }
