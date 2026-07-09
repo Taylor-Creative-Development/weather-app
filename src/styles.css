@@ -43,7 +43,7 @@ button {
 
 .command-bar {
   display: grid;
-  grid-template-columns: minmax(280px, 1fr) minmax(300px, 480px) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 480px) auto;
   gap: 16px;
   align-items: center;
   margin-bottom: 18px;
@@ -67,6 +67,10 @@ button {
 .brand-block {
   min-width: 0;
   gap: 12px;
+}
+
+.brand-block > div:last-child {
+  min-width: 0;
 }
 
 .brand-mark,
@@ -113,7 +117,9 @@ h1 {
 }
 
 h2 {
+  min-width: 0;
   margin-bottom: 0;
+  overflow-wrap: anywhere;
   color: #fffaf0;
   font-size: 22px;
   letter-spacing: 0;
@@ -205,7 +211,13 @@ h2 {
   box-shadow: 0 18px 38px rgba(0, 0, 0, 0.22);
 }
 
+.results span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .results small {
+  flex-shrink: 0;
   margin-left: auto;
   color: var(--muted);
 }
@@ -232,7 +244,7 @@ h2 {
 .current-panel {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(300px, 1.1fr) auto minmax(360px, 0.9fr);
+  grid-template-columns: minmax(0, 1.1fr) auto minmax(320px, 0.9fr);
   gap: 22px;
   align-items: center;
   overflow: hidden;
@@ -266,9 +278,11 @@ h2 {
 .temp-line {
   flex-wrap: wrap;
   gap: 18px;
+  min-width: 0;
 }
 
 .temp-line span {
+  flex-shrink: 0;
   color: #fffaf0;
   font-size: clamp(76px, 12vw, 122px);
   font-weight: 920;
@@ -276,8 +290,13 @@ h2 {
   letter-spacing: 0;
 }
 
+.temp-line div {
+  min-width: min(100%, 220px);
+}
+
 .temp-line strong {
   display: block;
+  overflow-wrap: anywhere;
   color: #f5d7a1;
   font-size: clamp(22px, 3vw, 34px);
   line-height: 1.05;
@@ -302,11 +321,14 @@ h2 {
   display: inline-flex;
   gap: 6px;
   align-items: center;
+  max-width: 100%;
+  min-width: 0;
   min-height: 32px;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: rgba(255, 250, 240, 0.08);
   padding: 0 11px;
+  overflow-wrap: anywhere;
 }
 
 .weather-badge {
@@ -447,6 +469,10 @@ h2 {
   margin-bottom: 16px;
 }
 
+.section-heading > div {
+  min-width: 0;
+}
+
 .view-toggle {
   display: inline-flex;
   gap: 4px;
@@ -476,6 +502,7 @@ h2 {
 
 .day-card {
   display: grid;
+  min-width: 0;
   min-height: 174px;
   gap: 10px;
   justify-items: start;
@@ -510,6 +537,7 @@ h2 {
 }
 
 .day-card em {
+  overflow-wrap: anywhere;
   color: var(--muted);
   font-size: 13px;
   font-style: normal;
@@ -518,12 +546,15 @@ h2 {
 
 .condition-pill {
   gap: 7px;
+  max-width: 100%;
+  min-width: 0;
   min-height: 34px;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: rgba(45, 212, 191, 0.12);
   color: #ccfbf1;
   padding: 0 12px;
+  overflow-wrap: anywhere;
   font-weight: 850;
 }
 
@@ -604,6 +635,18 @@ h2 {
   color: #fffaf0;
 }
 
+.radar-base-tile {
+  filter: brightness(0.62) saturate(0.72) contrast(1.08);
+}
+
+.radar-label-tile {
+  filter: brightness(1.16) saturate(0.76);
+}
+
+.radar-tile {
+  transition: opacity 420ms ease;
+}
+
 .radar-controls {
   gap: 12px;
   margin-top: 14px;
@@ -621,6 +664,7 @@ h2 {
 
 .radar-controls span {
   min-width: 92px;
+  overflow-wrap: anywhere;
   color: #d3c8b7;
   font-size: 13px;
   font-weight: 800;
@@ -684,6 +728,7 @@ h2 {
   }
 
   h1 {
+    overflow-wrap: anywhere;
     white-space: normal;
   }
 

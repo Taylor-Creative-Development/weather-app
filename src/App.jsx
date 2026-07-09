@@ -25,16 +25,23 @@ import {
   Umbrella,
   Wind,
 } from 'lucide-react'
-import { CircleMarker, MapContainer, Popup, TileLayer, useMap } from 'react-leaflet'
+import { CircleMarker, MapContainer, Pane, Popup, TileLayer, useMap } from 'react-leaflet'
 import { getAlerts, getRadarTimeline, getWeather, searchLocations } from './weatherApi.js'
 
 const savedLocationKey = 'weather-app:last-location'
 const radarBaseMap = {
   attribution:
     '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-  url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+  labelsUrl: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png',
+  url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png',
 }
-const radarLayerOpacity = 0.86
+const mapMaxZoom = 18
+const radarPreloadFrameCount = 2
+const radarFrameInterval = 1100
+const radarLayerOpacity = 0.82
+const radarMaxNativeZoom = 7
+const radarTransitionMs = 420
+const radarLabelOpacity = 0.68
 const fallbackLocation = {
   name: 'Chicago',
   admin1: 'Illinois',
@@ -351,6 +358,9 @@ function RadarPanel({ location }) {
   const [frameIndex, setFrameIndex] = useState(0)
   const [playing, setPlaying] = useState(true)
   const [error, setError] = useState('')
+  const [visibleFrame, setVisibleFrame] = useState(null)
+  const [previousFrame, setPreviousFrame] = useState(null)
+  const [transitioning, setTransitioning] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -378,12 +388,32 @@ function RadarPanel({ location }) {
     if (!playing || frames.length < 2) return
     const id = window.setInterval(() => {
       setFrameIndex((index) => (index + 1) % frames.length)
-    }, 850)
+    }, radarFrameInterval)
 
     return () => window.clearInterval(id)
   }, [frames.length, playing])
 
   const currentFrame = frames[frameIndex]
+
+  useEffect(() => {
+    if (!currentFrame) return
+    setVisibleFrame((frame) => {
+      if (!frame || frame.path === currentFrame.path) return currentFrame
+      setPreviousFrame(frame)
+      setTransitioning(true)
+      return currentFrame
+    })
+  }, [currentFrame])
+
+  useEffect(() => {
+    if (!transitioning) return
+    const id = window.setTimeout(() => {
+      setPreviousFrame(null)
+      setTransitioning(false)
+    }, radarTransitionMs)
+
+    return () => window.clearTimeout(id)
+  }, [transitioning])
 
   return (
     <section className="radar-panel">
@@ -396,21 +426,52 @@ function RadarPanel({ location }) {
       </div>
       {error && <div className="notice error"><AlertTriangle size={18} />{error}</div>}
       <div className="map" aria-label="Radar map">
-        <MapContainer center={[location.latitude, location.longitude]} zoom={7} scrollWheelZoom className="leaflet-map">
-          <RecenterMap location={location} />
-          <TileLayer
+          <MapContainer center={[location.latitude, location.longitude]} maxZoom={mapMaxZoom} zoom={8} scrollWheelZoom className="leaflet-map">
+            <RecenterMap location={location} />
+            <RadarFramePreloader frames={frames} frameIndex={frameIndex} />
+            <TileLayer
             attribution={radarBaseMap.attribution}
+            className="radar-base-tile"
+            maxZoom={mapMaxZoom}
             url={radarBaseMap.url}
           />
-          {currentFrame && (
+          <Pane name="radar" style={{ zIndex: 300 }}>
+            {previousFrame && (
+              <TileLayer
+                key={`previous-${previousFrame.path}`}
+                attribution='Weather radar by <a href="https://www.rainviewer.com/">RainViewer</a>'
+                className="radar-tile radar-tile-previous"
+                maxNativeZoom={radarMaxNativeZoom}
+                maxZoom={mapMaxZoom}
+                opacity={transitioning ? 0 : radarLayerOpacity}
+                updateWhenIdle
+                url={previousFrame.tileUrl}
+                zIndex={1}
+              />
+            )}
+            {visibleFrame && (
+              <TileLayer
+                key={`current-${visibleFrame.path}`}
+                attribution='Weather radar by <a href="https://www.rainviewer.com/">RainViewer</a>'
+                className="radar-tile radar-tile-current"
+                maxNativeZoom={radarMaxNativeZoom}
+                maxZoom={mapMaxZoom}
+                opacity={radarLayerOpacity}
+                updateWhenIdle
+                url={visibleFrame.tileUrl}
+                zIndex={2}
+              />
+            )}
+          </Pane>
+          <Pane name="radar-labels" style={{ zIndex: 350 }}>
             <TileLayer
-              key={currentFrame.path}
-              attribution='Weather radar by <a href="https://www.rainviewer.com/">RainViewer</a>'
-              className="radar-tile"
-              opacity={radarLayerOpacity}
-              url={currentFrame.tileUrl}
+              attribution={radarBaseMap.attribution}
+              className="radar-label-tile"
+              maxZoom={mapMaxZoom}
+              opacity={radarLabelOpacity}
+              url={radarBaseMap.labelsUrl}
             />
-          )}
+          </Pane>
           <CircleMarker
             center={[location.latitude, location.longitude]}
             radius={8}
@@ -437,9 +498,9 @@ function RadarPanel({ location }) {
           disabled={frames.length === 0}
           aria-label="Radar frame"
         />
-        <span>{currentFrame ? formatRadarTime(currentFrame.time) : 'Loading radar...'}</span>
+        <span>{visibleFrame ? formatRadarTime(visibleFrame.time) : 'Loading radar...'}</span>
       </div>
-      <p className="subtle">Animated radar uses RainViewer past and nowcast frames. Dark map tiles use OpenStreetMap data.</p>
+      <p className="subtle">Animated radar uses RainViewer past and nowcast frames. Map tiles use OpenStreetMap data.</p>
     </section>
   )
 }
@@ -450,6 +511,46 @@ function RecenterMap({ location }) {
   useEffect(() => {
     map.setView([location.latitude, location.longitude], map.getZoom(), { animate: true })
   }, [location, map])
+
+  return null
+}
+
+function RadarFramePreloader({ frames, frameIndex }) {
+  const map = useMap()
+
+  useEffect(() => {
+    if (frames.length < 2) return undefined
+
+    const preload = () => {
+      const zoom = Math.min(Math.round(map.getZoom()), radarMaxNativeZoom)
+      const center = map.project(map.getCenter(), zoom)
+      const halfSize = map.getSize().divideBy(2)
+      const minTile = center.subtract(halfSize).divideBy(256).floor()
+      const maxTile = center.add(halfSize).divideBy(256).floor()
+
+      for (let offset = 1; offset <= radarPreloadFrameCount; offset += 1) {
+        const frame = frames[(frameIndex + offset) % frames.length]
+        if (!frame) continue
+
+        for (let x = minTile.x; x <= maxTile.x; x += 1) {
+          for (let y = minTile.y; y <= maxTile.y; y += 1) {
+            const image = new Image()
+            image.src = frame.tileUrl
+              .replace('{z}', String(zoom))
+              .replace('{x}', String(x))
+              .replace('{y}', String(y))
+          }
+        }
+      }
+    }
+
+    preload()
+    map.on('moveend zoomend', preload)
+
+    return () => {
+      map.off('moveend zoomend', preload)
+    }
+  }, [frameIndex, frames, map])
 
   return null
 }
