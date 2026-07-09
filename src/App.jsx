@@ -25,10 +25,63 @@ import {
   Umbrella,
   Wind,
 } from 'lucide-react'
-import { CircleMarker, MapContainer, Pane, Popup, TileLayer, useMap } from 'react-leaflet'
+import { CircleMarker, ImageOverlay, MapContainer, Pane, Popup, TileLayer, useMap } from 'react-leaflet'
 import { getAlerts, getRadarTimeline, getWeather, searchLocations } from './weatherApi.js'
 
 const savedLocationKey = 'weather-app:last-location'
+const stateAbbreviations = {
+  Alabama: 'AL',
+  Alaska: 'AK',
+  Arizona: 'AZ',
+  Arkansas: 'AR',
+  California: 'CA',
+  Colorado: 'CO',
+  Connecticut: 'CT',
+  Delaware: 'DE',
+  Florida: 'FL',
+  Georgia: 'GA',
+  Hawaii: 'HI',
+  Idaho: 'ID',
+  Illinois: 'IL',
+  Indiana: 'IN',
+  Iowa: 'IA',
+  Kansas: 'KS',
+  Kentucky: 'KY',
+  Louisiana: 'LA',
+  Maine: 'ME',
+  Maryland: 'MD',
+  Massachusetts: 'MA',
+  Michigan: 'MI',
+  Minnesota: 'MN',
+  Mississippi: 'MS',
+  Missouri: 'MO',
+  Montana: 'MT',
+  Nebraska: 'NE',
+  Nevada: 'NV',
+  'New Hampshire': 'NH',
+  'New Jersey': 'NJ',
+  'New Mexico': 'NM',
+  'New York': 'NY',
+  'North Carolina': 'NC',
+  'North Dakota': 'ND',
+  Ohio: 'OH',
+  Oklahoma: 'OK',
+  Oregon: 'OR',
+  Pennsylvania: 'PA',
+  'Rhode Island': 'RI',
+  'South Carolina': 'SC',
+  'South Dakota': 'SD',
+  Tennessee: 'TN',
+  Texas: 'TX',
+  Utah: 'UT',
+  Vermont: 'VT',
+  Virginia: 'VA',
+  Washington: 'WA',
+  'West Virginia': 'WV',
+  Wisconsin: 'WI',
+  Wyoming: 'WY',
+  'District of Columbia': 'DC',
+}
 const radarBaseMap = {
   attribution:
     '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
@@ -36,6 +89,9 @@ const radarBaseMap = {
   url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png',
 }
 const mapMaxZoom = 18
+const nwsRadarAttribution = 'Radar by NOAA/NWS MRMS'
+const nwsRadarOpacity = 0.78
+const nwsRadarUrl = 'https://mapservices.weather.noaa.gov/eventdriven/rest/services/radar/radar_base_reflectivity/MapServer/export'
 const radarPreloadFrameCount = 2
 const radarFrameInterval = 1400
 const radarLayerOpacity = 0.82
@@ -130,6 +186,7 @@ export default function App() {
 
   const selected = weather?.days?.[selectedDay]
   const placeName = formatLocation(location)
+  const titleScale = getTitleScale(placeName)
   const accent = weatherAccent(weather?.current?.icon)
   const activeAlerts = alerts.alerts.length
 
@@ -140,7 +197,7 @@ export default function App() {
           <div className="brand-mark"><CloudSun size={22} /></div>
           <div>
             <p className="eyebrow">Forecast workspace</p>
-            <h1>{placeName}</h1>
+            <h1 style={{ '--title-scale': titleScale }}>{placeName}</h1>
           </div>
         </div>
 
@@ -354,6 +411,61 @@ function DayDetails({ day }) {
 }
 
 function RadarPanel({ location }) {
+  const useNwsRadar = isUsLocation(location)
+
+  if (useNwsRadar) {
+    return <NwsRadarPanel location={location} />
+  }
+
+  return <RainViewerRadarPanel location={location} />
+}
+
+function NwsRadarPanel({ location }) {
+  return (
+    <section className="radar-panel">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Radar</p>
+          <h2>Live precipitation map</h2>
+        </div>
+        <a href="https://radar.weather.gov/" target="_blank" rel="noreferrer">NOAA/NWS</a>
+      </div>
+      <div className="map" aria-label="Radar map">
+        <MapContainer center={[location.latitude, location.longitude]} maxZoom={mapMaxZoom} zoom={8} scrollWheelZoom className="leaflet-map">
+          <RecenterMap location={location} />
+          <TileLayer
+            attribution={radarBaseMap.attribution}
+            className="radar-base-tile"
+            maxZoom={mapMaxZoom}
+            url={radarBaseMap.url}
+          />
+          <Pane name="radar" style={{ zIndex: 300 }}>
+            <NwsRadarLayer />
+          </Pane>
+          <Pane name="radar-labels" style={{ zIndex: 350 }}>
+            <TileLayer
+              attribution={radarBaseMap.attribution}
+              className="radar-label-tile"
+              maxZoom={mapMaxZoom}
+              opacity={radarLabelOpacity}
+              url={radarBaseMap.labelsUrl}
+            />
+          </Pane>
+          <CircleMarker
+            center={[location.latitude, location.longitude]}
+            radius={8}
+            pathOptions={{ color: '#ffffff', fillColor: '#22d3ee', fillOpacity: 1, weight: 3 }}
+          >
+            <Popup>{formatLocation(location)}</Popup>
+          </CircleMarker>
+        </MapContainer>
+      </div>
+      <p className="subtle">Radar by NOAA/NWS MRMS, updated every few minutes. Map tiles use OpenStreetMap data.</p>
+    </section>
+  )
+}
+
+function RainViewerRadarPanel({ location }) {
   const [frames, setFrames] = useState([])
   const [frameIndex, setFrameIndex] = useState(0)
   const [playing, setPlaying] = useState(true)
@@ -514,6 +626,64 @@ function RadarPanel({ location }) {
   )
 }
 
+function NwsRadarLayer() {
+  const map = useMap()
+  const [overlay, setOverlay] = useState(null)
+
+  useEffect(() => {
+    let timeoutId
+
+    function updateOverlay() {
+      const bounds = map.getBounds()
+      const size = map.getSize()
+      const southWest = map.options.crs.project(bounds.getSouthWest())
+      const northEast = map.options.crs.project(bounds.getNorthEast())
+      const width = Math.min(Math.max(Math.round(size.x), 320), 1600)
+      const height = Math.min(Math.max(Math.round(size.y), 320), 1600)
+      const params = new URLSearchParams({
+        bbox: `${southWest.x},${southWest.y},${northEast.x},${northEast.y}`,
+        bboxSR: '102100',
+        imageSR: '102100',
+        size: `${width},${height}`,
+        format: 'png32',
+        transparent: 'true',
+        f: 'image',
+        layers: 'show:3',
+        _: String(Math.floor(Date.now() / 300000)),
+      })
+
+      setOverlay({
+        bounds,
+        url: `${nwsRadarUrl}?${params}`,
+      })
+    }
+
+    function scheduleUpdate() {
+      window.clearTimeout(timeoutId)
+      timeoutId = window.setTimeout(updateOverlay, 120)
+    }
+
+    updateOverlay()
+    map.on('moveend zoomend resize', scheduleUpdate)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+      map.off('moveend zoomend resize', scheduleUpdate)
+    }
+  }, [map])
+
+  if (!overlay) return null
+
+  return (
+    <ImageOverlay
+      attribution={nwsRadarAttribution}
+      bounds={overlay.bounds}
+      opacity={nwsRadarOpacity}
+      url={overlay.url}
+    />
+  )
+}
+
 function RecenterMap({ location }) {
   const map = useMap()
 
@@ -655,7 +825,25 @@ function saveLocation(location) {
 
 function formatLocation(location) {
   if (!location) return 'Finding your location'
-  return [location.name, location.admin1].filter(Boolean).join(', ')
+  return [location.name, formatAdminArea(location)].filter(Boolean).join(', ')
+}
+
+function formatAdminArea(location) {
+  if (!location?.admin1) return ''
+  if (location.countryCode === 'US') return stateAbbreviations[location.admin1] ?? location.admin1
+  return location.admin1
+}
+
+function getTitleScale(value) {
+  if (!value) return 1
+  if (value.length <= 18) return 1
+  if (value.length <= 28) return 0.9
+  if (value.length <= 38) return 0.78
+  return 0.68
+}
+
+function isUsLocation(location) {
+  return !location?.countryCode || location.countryCode === 'US'
 }
 
 function formatTime(value) {
