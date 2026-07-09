@@ -32,6 +32,8 @@ jobs:
 
       - name: Build
         run: npm run build
+        env:
+          VITE_MAPTILER_KEY: ${{ vars.VITE_MAPTILER_KEY || secrets.VITE_MAPTILER_KEY }}
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
