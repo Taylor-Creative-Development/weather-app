@@ -66,11 +66,13 @@ button {
 
 .brand-block {
   min-width: 0;
+  overflow: hidden;
   gap: 12px;
 }
 
 .brand-block > div:last-child {
   min-width: 0;
+  overflow: hidden;
 }
 
 .brand-mark,
@@ -106,6 +108,8 @@ p {
 }
 
 h1 {
+  display: block;
+  max-width: 100%;
   margin: 0;
   overflow: hidden;
   color: #fffaf0;
@@ -273,6 +277,7 @@ h2 {
 
 .current-copy {
   min-width: 0;
+  overflow: hidden;
 }
 
 .temp-line {
@@ -414,6 +419,7 @@ h2 {
 }
 
 .alerts {
+  overflow: hidden;
   padding: 18px;
   border-color: rgba(245, 158, 11, 0.32);
   background: rgba(69, 48, 22, 0.5);
@@ -439,13 +445,24 @@ h2 {
   display: flex;
   justify-content: space-between;
   gap: 12px;
+  min-width: 0;
   color: #fed7aa;
   font-weight: 850;
   cursor: pointer;
 }
 
 .alerts summary span {
+  min-width: 0;
+  overflow-wrap: anywhere;
   gap: 8px;
+}
+
+.alerts summary strong {
+  flex-shrink: 0;
+}
+
+.alerts p {
+  overflow-wrap: anywhere;
 }
 
 .instruction {
@@ -696,8 +713,34 @@ h2 {
   }
 }
 
+@media (max-width: 1180px) {
+  .command-bar {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .brand-block {
+    grid-column: 1 / -1;
+  }
+
+  .search {
+    grid-column: 1 / 2;
+  }
+
+  .toolbar {
+    grid-column: 2 / 3;
+  }
+
+  .current-panel {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .current-panel .metric-grid {
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 980px) {
-  .command-bar,
   .current-panel {
     grid-template-columns: 1fr;
   }
@@ -714,12 +757,25 @@ h2 {
   .day-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .current-panel .metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 640px) {
   .app-shell {
     width: min(100% - 20px, 1220px);
     padding-top: 14px;
+  }
+
+  .command-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .search,
+  .toolbar {
+    grid-column: 1;
   }
 
   .brand-mark {
@@ -734,6 +790,7 @@ h2 {
 
   .search,
   .metric-grid,
+  .current-panel .metric-grid,
   .day-strip {
     grid-template-columns: 1fr;
   }
