@@ -58,6 +58,7 @@ button {
 .results button,
 .condition-pill,
 .alerts summary span,
+.radar-window-toggle,
 .radar-controls,
 .radar-controls button {
   display: flex;
@@ -165,6 +166,7 @@ h2 {
 
 .search button,
 .view-toggle button,
+.radar-window-toggle button,
 .radar-controls button {
   min-height: 38px;
   border: 0;
@@ -176,6 +178,7 @@ h2 {
 }
 
 .search button:disabled,
+.radar-window-toggle button:disabled,
 .radar-controls button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
@@ -711,6 +714,28 @@ h2 {
   transition: opacity 650ms ease;
 }
 
+.radar-window-toggle {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 100%;
+  margin-top: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 250, 240, 0.07);
+  padding: 4px;
+}
+
+.radar-window-toggle button {
+  background: transparent;
+  color: #d3c8b7;
+}
+
+.radar-window-toggle button.active {
+  background: #f4a261;
+  color: #1c1712;
+}
+
 .radar-controls {
   gap: 12px;
   margin-top: 14px;
@@ -886,6 +911,17 @@ h2 {
   .radar-controls {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .radar-window-toggle {
+    display: flex;
+    width: 100%;
+  }
+
+  .radar-window-toggle button {
+    flex: 1;
+    min-width: 0;
+    padding: 0 10px;
   }
 
   .radar-controls span {

@@ -91,6 +91,12 @@ const radarBaseMap = {
 const mapMaxZoom = 8
 const mapTilerKey = import.meta.env.VITE_MAPTILER_KEY?.trim()
 const mapTilerAnimationSpeed = 3600
+const defaultRadarWindow = '6h'
+const radarWindowOptions = [
+  { id: '6h', label: 'Next 6h', hours: 6 },
+  { id: '24h', label: 'Next 24h', hours: 24 },
+  { id: 'full', label: 'Full forecast', hours: null },
+]
 const radarPreloadFrameCount = 2
 const radarFrameInterval = 1400
 const radarLayerOpacity = 0.82
@@ -419,7 +425,12 @@ function MapTilerRadarPanel({ location }) {
   const mapRef = useRef(null)
   const markerRef = useRef(null)
   const radarLayerRef = useRef(null)
-  const [timeRange, setTimeRange] = useState(null)
+  const activeRangeRef = useRef(null)
+  const availableRangeRef = useRef(null)
+  const selectedWindowRef = useRef(defaultRadarWindow)
+  const [availableRange, setAvailableRange] = useState(null)
+  const [activeRange, setActiveRange] = useState(null)
+  const [selectedWindow, setSelectedWindow] = useState(defaultRadarWindow)
   const [radarTime, setRadarTime] = useState(null)
   const [playing, setPlaying] = useState(true)
   const [error, setError] = useState('')
@@ -434,8 +445,13 @@ function MapTilerRadarPanel({ location }) {
     let removeListeners = () => {}
 
     setError('')
-    setTimeRange(null)
+    setAvailableRange(null)
+    setActiveRange(null)
     setRadarTime(null)
+    setSelectedWindow(defaultRadarWindow)
+    selectedWindowRef.current = defaultRadarWindow
+    activeRangeRef.current = null
+    availableRangeRef.current = null
     setPlaying(true)
 
     async function initializeMap() {
@@ -452,7 +468,7 @@ function MapTilerRadarPanel({ location }) {
 
         map = new Map({
           container: mapContainerRef.current,
-          style: MapStyle.DATAVIZ.DARK,
+          style: MapStyle.STREETS.LIGHT,
           center: [location.longitude, location.latitude],
           zoom: 9,
           minZoom: 3,
@@ -475,13 +491,30 @@ function MapTilerRadarPanel({ location }) {
         mapRef.current = map
         radarLayerRef.current = radarLayer
 
+        const applyWindow = (windowId, { restart = true } = {}) => {
+          const available = availableRangeRef.current
+          if (!available) return null
+
+          const nextRange = getMapTilerRadarWindowRange(available, windowId)
+          activeRangeRef.current = nextRange
+          setActiveRange(nextRange)
+
+          if (!restart) return nextRange
+
+          radarLayer.setAnimationTime(nextRange.start)
+          setRadarTime(nextRange.start)
+          if (playing) radarLayer.animateByFactor(mapTilerAnimationSpeed)
+          return nextRange
+        }
+
         const updateTimeline = () => {
           const start = radarLayer.getAnimationStart()
           const end = radarLayer.getAnimationEnd()
-          const current = radarLayer.getAnimationTime()
           if (!Number.isFinite(start) || !Number.isFinite(end)) return
-          setTimeRange({ start, end })
-          setRadarTime(Number.isFinite(current) ? current : end)
+          const nextAvailableRange = { start, end }
+          availableRangeRef.current = nextAvailableRange
+          setAvailableRange(nextAvailableRange)
+          applyWindow(selectedWindowRef.current)
         }
 
         const handleSourceReady = () => {
@@ -490,6 +523,19 @@ function MapTilerRadarPanel({ location }) {
         }
 
         const handleTick = (event) => {
+          const range = activeRangeRef.current
+          if (range && event.time > range.end) {
+            radarLayer.setAnimationTime(range.start)
+            setRadarTime(range.start)
+            return
+          }
+
+          if (range && event.time < range.start) {
+            radarLayer.setAnimationTime(range.start)
+            setRadarTime(range.start)
+            return
+          }
+
           setRadarTime(event.time)
         }
 
@@ -539,6 +585,23 @@ function MapTilerRadarPanel({ location }) {
     }
   }, [location])
 
+  function changeRadarWindow(windowId) {
+    const radarLayer = radarLayerRef.current
+    const available = availableRangeRef.current
+    if (!radarLayer || !available) return
+
+    selectedWindowRef.current = windowId
+    setSelectedWindow(windowId)
+
+    const nextRange = getMapTilerRadarWindowRange(available, windowId)
+    activeRangeRef.current = nextRange
+    setActiveRange(nextRange)
+    radarLayer.setAnimationTime(nextRange.start)
+    radarLayer.animateByFactor(mapTilerAnimationSpeed)
+    setRadarTime(nextRange.start)
+    setPlaying(true)
+  }
+
   function togglePlayback() {
     const radarLayer = radarLayerRef.current
     if (!radarLayer) return
@@ -553,11 +616,13 @@ function MapTilerRadarPanel({ location }) {
   function scrubTimeline(value) {
     const time = Number(value)
     const radarLayer = radarLayerRef.current
+    const range = activeRangeRef.current
     if (!radarLayer) return
+    const boundedTime = range ? clamp(time, range.start, range.end) : time
     radarLayer.animateByFactor(0)
-    radarLayer.setAnimationTime(time)
+    radarLayer.setAnimationTime(boundedTime)
     setPlaying(false)
-    setRadarTime(time)
+    setRadarTime(boundedTime)
   }
 
   return (
@@ -573,19 +638,32 @@ function MapTilerRadarPanel({ location }) {
       <div className="map" aria-label="Radar map">
         <div ref={mapContainerRef} className="maptiler-map" />
       </div>
+      <div className="radar-window-toggle" aria-label="Radar timeframe">
+        {radarWindowOptions.map((option) => (
+          <button
+            key={option.id}
+            type="button"
+            className={selectedWindow === option.id ? 'active' : ''}
+            onClick={() => changeRadarWindow(option.id)}
+            disabled={!availableRange}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
       <div className="radar-controls">
-        <button type="button" onClick={togglePlayback} disabled={!timeRange}>
+        <button type="button" onClick={togglePlayback} disabled={!activeRange}>
           {playing ? <Pause size={16} /> : <Play size={16} />}
           {playing ? 'Pause' : 'Play'}
         </button>
         <input
           type="range"
-          min={timeRange?.start ?? 0}
-          max={timeRange?.end ?? 0}
+          min={activeRange?.start ?? 0}
+          max={activeRange?.end ?? 0}
           step="900"
-          value={radarTime ?? timeRange?.end ?? 0}
+          value={radarTime ?? activeRange?.start ?? 0}
           onChange={(event) => scrubTimeline(event.target.value)}
-          disabled={!timeRange}
+          disabled={!activeRange}
           aria-label="Radar time"
         />
         <span>{radarTime ? formatMapTilerTime(radarTime) : 'Loading radar...'}</span>
@@ -929,11 +1007,29 @@ function formatRadarTime(value) {
 
 function formatMapTilerTime(value) {
   if (!value) return 'Radar time'
-  return new Intl.DateTimeFormat(undefined, {
-    weekday: 'short',
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(new Date(value * 1000))
+  const now = Date.now() / 1000
+  const prefix = value > now + 1800 ? 'Forecast' : value < now - 1800 ? 'Recent' : 'Now'
+  const date = new Date(value * 1000)
+  const sameDay = new Date().toDateString() === date.toDateString()
+  const formatted = new Intl.DateTimeFormat(undefined, sameDay
+    ? { hour: 'numeric', minute: '2-digit' }
+    : { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(date)
+
+  return `${prefix}: ${formatted}`
+}
+
+function getMapTilerRadarWindowRange(availableRange, windowId) {
+  const option = radarWindowOptions.find((item) => item.id === windowId) ?? radarWindowOptions[0]
+  if (!option.hours) return availableRange
+
+  const now = Date.now() / 1000
+  const start = clamp(now, availableRange.start, availableRange.end)
+  const end = clamp(now + option.hours * 60 * 60, start, availableRange.end)
+  return { start, end }
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max)
 }
 
 function round(value) {
