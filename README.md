@@ -2,6 +2,21 @@
 
 A responsive weather dashboard built with React and Vite. It provides current conditions, a five-day forecast, U.S. weather alerts, and an animated radar map.
 
+## Project Governance
+
+This repository follows Taylor Creative Development Standards v0.2.
+
+Before beginning work, read:
+
+- `PROJECT_STATUS.md` for the active handoff
+- `PROJECT_CHARTER.md` for the current repository scope and strategic direction
+- `CORE_PRINCIPLES.md` for product, user, business, and engineering judgment
+- `ENGINEERING_HANDBOOK.md` for the standard workflow
+- `ROLE_ASSIGNMENTS.md` for authority and responsibilities
+- `AGENTS.md` for repository-specific operating instructions
+
+GitHub Issues are the authoritative source for approved implementation work.
+
 ## Features
 
 - Current conditions for the selected location
